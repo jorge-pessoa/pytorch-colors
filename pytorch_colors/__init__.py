@@ -5,21 +5,6 @@ from skimage.color import (rgb2lab, rgb2yuv, rgb2ycbcr, lab2rgb, yuv2rgb, ycbcr2
                            rgb2hsv, hsv2rgb, rgb2xyz, xyz2rgb, rgb2hed, hed2rgb)
 
 
-def _safe_to_tensor(t):
-    if type(t) in [torch.FloatTensor, torch.DoubleTensor,
-                   torch.HalfTensor, torch.ByteTensor,
-                   torch.CharTensor, torch.ShortTensor,
-                   torch.IntTensor, torch.LongTensor,
-                   torch.cuda.FloatTensor, torch.cuda.DoubleTensor,
-                   torch.cuda.HalfTensor, torch.cuda.ByteTensor,
-                   torch.cuda.CharTensor, torch.cuda.ShortTensor,
-                   torch.cuda.IntTensor, torch.cuda.LongTensor]:
-        return t, False
-    if type(t) is torch.autograd.Variable:
-        return t.data, True
-    raise TypeError('No known conversions from %s to torch.Tensor' % t.__class__.__name__)
-
-
 def _convert(input_, type_):
     return {
         'float': input_.float(),
@@ -29,46 +14,35 @@ def _convert(input_, type_):
 
 def _generic_transform_sk_4d(transform, in_type='', out_type=''):
     def apply_transform(input_):
-        to_cuda = input_.is_cuda
         to_squeeze = (input_.dim() == 3)
-        input_, to_variable = _safe_to_tensor(input_)
-        if to_cuda:
-            input_ = input_.cpu()
+        device = input_.device
+        input_ = input_.cpu()
         input_ = _convert(input_, in_type)
+
         if to_squeeze:
             input_ = input_.unsqueeze(0)
 
         input_ = input_.permute(0, 2, 3, 1).numpy()
         transformed = transform(input_)
         output = torch.from_numpy(transformed).float().permute(0, 3, 1, 2)
-        if to_variable:
-            output = Variable(output)
-        if to_cuda:
-            output = output.cuda()
         if to_squeeze:
             output = output.squeeze(0)
         output = _convert(output, out_type)
-        return output
+        return output.to(device)
     return apply_transform
 
 
 def _generic_transform_sk_3d(transform, in_type='', out_type=''):
     def apply_transform_individual(input_):
-        to_cuda = input_.is_cuda
-        input_, to_variable = _safe_to_tensor(input_)
-        if to_cuda:
-            input_ = input_.cpu()
+        device = input_.device
+        input_ = input_.cpu()
         input_ = _convert(input_, in_type)
 
         input_ = input_.permute(1, 2, 0).numpy()
         transformed = transform(input_)
         output = torch.from_numpy(transformed).float().permute(2, 0, 1)
-        if to_variable:
-            output = Variable(output)
-        if to_cuda:
-            output = output.cuda()
         output = _convert(output, out_type)
-        return output
+        return output.to(device)
 
     def apply_transform(input_):
         to_stack = []
